@@ -1,12 +1,13 @@
+import api.Api
 import com.typesafe.config.ConfigFactory
 
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
-import dao.UserDao
+import dao.{LastCommandDao, UserRegistrationDao}
 
 object MainApp {
   def main(args: Array[String]) {
-    val bot = new MainBot(new UserDao(buildDB()))
+    val bot = new MainBot(new UserRegistrationDao(buildDB()), new LastCommandDao(buildDB()), new Api)
     val eol = bot.run()
     println("Press [ENTER] to shutdown the bot")
     scala.io.StdIn.readLine()

@@ -1,0 +1,44 @@
+package dao
+
+import models.{LastCommand, BotCommand}
+import slick.jdbc.PostgresProfile
+import slick.jdbc.PostgresProfile.api._
+
+import scala.concurrent.Future
+import  scala.concurrent.ExecutionContext.Implicits.global
+import scala.util.{Success, Failure}
+
+class LastCommandDao(db: PostgresProfile.backend.DatabaseDef) {
+  implicit val myEnumMapper = MappedColumnType.base[BotCommand.Value, String](
+    e => e.toString,
+    s => BotCommand.withName(s)
+  )
+  def all(): Future[Seq[LastCommand]] = {
+    db.run(commands.result)
+  }
+
+  def getByUserId(id: Int): Future[Option[BotCommand.Value]] = {
+    db.run(commands.filter(_.userId === id).result.headOption).map(a => a.flatMap(_.command))
+  }
+
+  def setLastCommand(userId: Int, command: Option[BotCommand.Value]): Future[Int] = {
+    db.run(commands insertOrUpdate LastCommand(userId, command))
+
+//
+//      .onComplete({
+//        case Success(value) =>  System.err.println("asd")
+//        case Failure(e) => System.err.println(e.getMessage)
+//      })
+  }
+
+  private class CommandTable(tag: Tag) extends Table[LastCommand](tag, "LastCommands") {
+
+    def userId = column[Int]("userId", O.PrimaryKey)
+
+    def command = column[Option[BotCommand.Value]]("command")
+
+    override def * = (userId, command) <> (LastCommand.tupled, LastCommand.unapply)
+  }
+
+  private val commands = TableQuery[CommandTable]
+}
