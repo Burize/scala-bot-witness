@@ -44,12 +44,12 @@ class MainBot (userRegistrationDao: UserRegistrationDao, lastCommandDao: LastCom
   }
 
   override def receiveMessage(message: Message): Future[Unit] = {
-
-
-    val isCommand = message.entities.map( entities => entities.head.`type` match {
-      case MessageEntityType.BotCommand => true
-      case _ => false
-    }).getOrElse(false)
+    val isCommand = message.entities
+      .map( entities => entities.head.`type` match {
+        case MessageEntityType.BotCommand => true
+        case _ => false
+      })
+      .getOrElse(false)
 
     if(isCommand) {
       return Future.successful()
@@ -59,33 +59,46 @@ class MainBot (userRegistrationDao: UserRegistrationDao, lastCommandDao: LastCom
       .map(_.id)
       .map(userId => lastCommandDao.getByUserId(userId).map(_.map({
         case BotCommand.Registration => nextRegistrationStep(message)
+        case BotCommand.SendReport => sendReport(message)
       })))
 
     Future.successful()
   }
 
+  onCommand("/sendReport"){implicit message =>
+    isAuth{
+        message.from
+          .map(_.id)
+          .map(id => lastCommandDao.setLastCommand(id, Some(BotCommand.SendReport)))
+        .getOrElse(Future.successful())
+        .map(_ => IO{ reply("Enter your report")})
+        .recover({ case _ => IO{ reply("There is some error")}})
+        .map(_.unsafeRunSync())
+    }
+    Future.successful()
+  }
+
   onCommand("/registration"){ implicit message =>
-    message.from
-        .map(_.id)
-        .map( id => {
-          val registrationF = userRegistrationDao.getById(id).flatMap({
-            case Some(_) => userRegistrationDao.setStep(id, RegistrationStep.SetFirstName)
-            case None => userRegistrationDao.create(id).flatMap(_ => userRegistrationDao.setStep(id, RegistrationStep.SetFirstName))
-          })
-          registrationF.map(_ => lastCommandDao.setLastCommand(id, Some(BotCommand.Registration)))
-          registrationF
-    })
-      .getOrElse(Future.failed(new Exception("Empty sender")))
-      .map(_ => IO{reply("Enter your first name")} )
-      .recover({case _ => IO{reply("There is some error")}})
-      .foreach(_.unsafeRunSync())
+     message.from.map(_.id)
+      .map(id => userRegistrationDao.getById(id).map(reg => (id, reg)))
+      .getOrElse(Future.failed(new Exception("Empty sender"))).flatMap( v => {
+         val (userId, registration) = v
+
+         val onRegister = () =>  lastCommandDao.setLastCommand(userId, Some(BotCommand.Registration)).map(_ => IO{reply("Enter your first name")})
+           val resF = registration.map(_.complete) match {
+             case Some(true) => Future.successful(IO{ reply(" You are already registered")})
+             case Some(false) => userRegistrationDao.setStep(userId, RegistrationStep.SetFirstName).flatMap(_ => onRegister())
+             case None => userRegistrationDao.create(userId).flatMap(_ => userRegistrationDao.setStep(userId, RegistrationStep.SetFirstName)).flatMap(_ => onRegister())
+           }
+           resF
+     })
+       .recover({case _ => IO{reply("There is some error")}})
+       .foreach(_.unsafeRunSync())
 
     Future.successful()
   }
 
   private def nextRegistrationStep(implicit message: Message) = {
-
-
     message.from.map(_.id).map(userId => {
       userRegistrationDao.getById(userId).map(_.map(_.step).flatMap({
         case Some(RegistrationStep.SetFirstName) => message.text.map(firstName => {
@@ -118,7 +131,6 @@ class MainBot (userRegistrationDao: UserRegistrationDao, lastCommandDao: LastCom
       "Send your phone",
       replyMarkup = Some(button)
     )
-    Future.successful()
   }
 
   private def signUpUser(id: Int) =  {
@@ -131,6 +143,27 @@ class MainBot (userRegistrationDao: UserRegistrationDao, lastCommandDao: LastCom
         ).getOrElse(Future.failed(new Exception("Incorrect user")))
       case None => Future.failed(new Exception("Empty registration"))
     }).flatten
+  }
+
+  private def isAuth(block: => Any)(implicit message: Message) = {
+    message.from.map(_.id)
+      .map(id => userRegistrationDao.getById(id)).getOrElse(Future.successful(None))
+      .map(_.map(r => r.complete).getOrElse(false))
+      .map({
+        case true => block
+        case false => reply("You must be registered for this. Use /registration command")
+      })
+  }
+
+
+  private def sendReport(implicit message: Message) = {
+    for {
+      user <- message.from
+      text <- message.text
+    } yield api.sendReport(user.id, text)
+      .map(_ => IO{ reply("Report has been successfully sent")})
+      .recover({case _ => IO{ reply("Error on report sending")}} )
+    .map(_.unsafeRunSync())
   }
 
   private def buildProxySettings(): Proxy = {

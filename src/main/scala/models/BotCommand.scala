@@ -1,5 +1,5 @@
 package models
 
 object BotCommand extends  Enumeration {
- val Registration = Value
+ val Registration, SendReport = Value
 }
