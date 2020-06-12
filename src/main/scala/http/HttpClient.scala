@@ -5,7 +5,7 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.model._
 import akka.stream.ActorMaterializer
 
-import scala.concurrent.{ExecutionContextExecutor}
+import scala.concurrent.ExecutionContextExecutor
 
 
 object HttpClient {
@@ -16,7 +16,7 @@ object HttpClient {
   def send(method: HttpMethod, path: String, json: String) = {
     Http().singleRequest(
       HttpRequest(
-        uri = s"http://localhost:9000/${path}",
+        uri = s"http://localhost:9000/$path",
         method = method,
         entity = HttpEntity(ContentTypes.`application/json`, json)
       ))

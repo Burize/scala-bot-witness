@@ -6,9 +6,11 @@ import slick.jdbc.PostgresProfile.api._
 
 import scala.concurrent.Future
 import  scala.concurrent.ExecutionContext.Implicits.global
-import scala.util.{Success, Failure}
+import javax.inject.Singleton
+import com.google.inject.Inject
 
-class LastCommandDao(db: PostgresProfile.backend.DatabaseDef) {
+@Singleton
+class LastCommandDao @Inject() (db: PostgresProfile.backend.DatabaseDef) {
   implicit val myEnumMapper = MappedColumnType.base[BotCommand.Value, String](
     e => e.toString,
     s => BotCommand.withName(s)
@@ -23,12 +25,6 @@ class LastCommandDao(db: PostgresProfile.backend.DatabaseDef) {
 
   def setLastCommand(userId: Int, command: Option[BotCommand.Value]): Future[Int] = {
     db.run(commands insertOrUpdate LastCommand(userId, command))
-
-//
-//      .onComplete({
-//        case Success(value) =>  System.err.println("asd")
-//        case Failure(e) => System.err.println(e.getMessage)
-//      })
   }
 
   private class CommandTable(tag: Tag) extends Table[LastCommand](tag, "LastCommands") {

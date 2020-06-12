@@ -6,8 +6,11 @@ import slick.jdbc.PostgresProfile
 import slick.jdbc.PostgresProfile.api._
 
 import scala.concurrent.Future
+import javax.inject.Singleton
+import com.google.inject.Inject
 
-class UserRegistrationDao(db: PostgresProfile.backend.DatabaseDef) {
+@Singleton
+class UserRegistrationDao @Inject()(db: PostgresProfile.backend.DatabaseDef) {
   implicit val myEnumMapper = MappedColumnType.base[RegistrationStep.Value, String](
     e => e.toString,
     s => RegistrationStep.withName(s)
@@ -16,12 +19,12 @@ class UserRegistrationDao(db: PostgresProfile.backend.DatabaseDef) {
     db.run(users.result)
   }
 
-  def getById(id: Int) = {
+  def getById(id: Int): Future[Option[UserRegistration]] = {
     db.run(users.filter(_.id === id).result.headOption)
   }
 
   def create(userId: Int): Future[Int] = {
-    db.run(users insertOrUpdate  UserRegistration(userId, Some(RegistrationStep.SetPhone), false, None, None, None))
+    db.run(users insertOrUpdate  UserRegistration(userId, Some(RegistrationStep.SetPhone), complete = false, None, None, None))
   }
 
   def setStep(userId: Int, step: RegistrationStep.Value): Future[Int] = {

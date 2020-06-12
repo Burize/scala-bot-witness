@@ -10,13 +10,14 @@ import com.typesafe.config.ConfigFactory
 import dao.{LastCommandDao, UserRegistrationDao}
 import slogging.{LogLevel, LoggerConfig, PrintLoggerFactory}
 import cats.effect._
+import com.google.inject.Inject
 import models.{BotCommand, RegistrationStep}
 
 import scala.concurrent._
 import scala.util.{Failure, Success}
 
 
-class MainBot (userRegistrationDao: UserRegistrationDao, lastCommandDao: LastCommandDao, api: Api) extends TelegramBot
+class MainBot @Inject()(userRegistrationDao: UserRegistrationDao, lastCommandDao: LastCommandDao, api: Api) extends TelegramBot
   with Polling
   with Commands[Future] {
 
@@ -45,23 +46,28 @@ class MainBot (userRegistrationDao: UserRegistrationDao, lastCommandDao: LastCom
 
   override def receiveMessage(message: Message): Future[Unit] = {
     val isCommand = message.entities
-      .map( entities => entities.head.`type` match {
-        case MessageEntityType.BotCommand => true
-        case _ => false
-      })
-      .getOrElse(false)
+      .exists(entities => entities.head.`type` match {
+      case MessageEntityType.BotCommand => true
+      case _ => false
+    })
 
     if(isCommand) {
       return Future.successful()
     }
 
-    message.from
+    val lastCommand = message.from
       .map(_.id)
-      .map(userId => lastCommandDao.getByUserId(userId).map(_.map({
-        case BotCommand.Registration => nextRegistrationStep(message)
-        case BotCommand.SendReport => sendReport(message)
-      })))
+      .map(userId => lastCommandDao.getByUserId(userId))
+      .getOrElse(Future.failed(new Exception("Empty sender")))
 
+
+    lastCommand.onComplete({
+        case Success(command) => command.map({
+          case BotCommand.Registration => nextRegistrationStep(message)
+          case BotCommand.SendReport => sendReport(message)
+        })
+        case Failure(e) => reply(e.getMessage)(message)
+      })
     Future.successful()
   }
 
@@ -70,9 +76,9 @@ class MainBot (userRegistrationDao: UserRegistrationDao, lastCommandDao: LastCom
         message.from
           .map(_.id)
           .map(id => lastCommandDao.setLastCommand(id, Some(BotCommand.SendReport)))
-        .getOrElse(Future.successful())
+        .getOrElse(Future.failed(new Exception("Empty user")))
         .map(_ => IO{ reply("Enter your report")})
-        .recover({ case _ => IO{ reply("There is some error")}})
+        .recover({ case e => IO{ reply(e.getMessage)}})
         .map(_.unsafeRunSync())
     }
     Future.successful()
@@ -81,9 +87,8 @@ class MainBot (userRegistrationDao: UserRegistrationDao, lastCommandDao: LastCom
   onCommand("/registration"){ implicit message =>
      message.from.map(_.id)
       .map(id => userRegistrationDao.getById(id).map(reg => (id, reg)))
-      .getOrElse(Future.failed(new Exception("Empty sender"))).flatMap( v => {
+      .getOrElse(Future.failed(new Exception("Empty user"))).flatMap( v => {
          val (userId, registration) = v
-
          val onRegister = () =>  lastCommandDao.setLastCommand(userId, Some(BotCommand.Registration)).map(_ => IO{reply("Enter your first name")})
            val resF = registration.map(_.complete) match {
              case Some(true) => Future.successful(IO{ reply(" You are already registered")})
@@ -92,7 +97,7 @@ class MainBot (userRegistrationDao: UserRegistrationDao, lastCommandDao: LastCom
            }
            resF
      })
-       .recover({case _ => IO{reply("There is some error")}})
+       .recover({case e => IO{reply(e.getMessage)}})
        .foreach(_.unsafeRunSync())
 
     Future.successful()
@@ -112,12 +117,11 @@ class MainBot (userRegistrationDao: UserRegistrationDao, lastCommandDao: LastCom
             .flatMap(_ => lastCommandDao.setLastCommand(userId, None))
             .map(_ => IO{
             signUpUser(userId).onComplete({
-              case Success(_) => {
+              case Success(_) =>
                 userRegistrationDao.complete(userId).map(_ => {
                   reply("You have successfully registered. Now you can send reports! Use /sendReport command")
                 })
-              }
-              case Failure(_) => reply("Error on registration. Please try again later")
+              case Failure(e) => reply(s"Error on registration. Please try again later. ${e.getMessage}")
             })
           })
         })
@@ -125,7 +129,7 @@ class MainBot (userRegistrationDao: UserRegistrationDao, lastCommandDao: LastCom
     })
   }
 
-  def requestPhone(implicit message: Message)  = {
+  def requestPhone(implicit message: Message): Future[Message] = {
     val button = ReplyKeyboardMarkup.singleButton(KeyboardButton.requestContact("Share contact"))
     reply(
       "Send your phone",
@@ -147,14 +151,16 @@ class MainBot (userRegistrationDao: UserRegistrationDao, lastCommandDao: LastCom
 
   private def isAuth(block: => Any)(implicit message: Message) = {
     message.from.map(_.id)
-      .map(id => userRegistrationDao.getById(id)).getOrElse(Future.successful(None))
-      .map(_.map(r => r.complete).getOrElse(false))
-      .map({
-        case true => block
-        case false => reply("You must be registered for this. Use /registration command")
+      .map(id => userRegistrationDao.getById(id)).getOrElse(Future.failed(new Exception("Empty user")))
+      .map(f => f.exists(r => r.complete))
+      .onComplete({
+        case Success(isAuthorized) => isAuthorized match {
+          case true => block
+          case false => reply("You must be registered for this. Use /registration command")
+        }
+        case Failure(e) => reply(e.getMessage)
       })
   }
-
 
   private def sendReport(implicit message: Message) = {
     for {
@@ -162,12 +168,12 @@ class MainBot (userRegistrationDao: UserRegistrationDao, lastCommandDao: LastCom
       text <- message.text
     } yield api.sendReport(user.id, text)
       .map(_ => IO{ reply("Report has been successfully sent")})
-      .recover({case _ => IO{ reply("Error on report sending")}} )
+      .recover({case e => IO{ reply(e.getMessage)}} )
     .map(_.unsafeRunSync())
   }
 
   private def buildProxySettings(): Proxy = {
-    val config = ConfigFactory.load();
+    val config = ConfigFactory.load()
     val url = config.getString("proxy.url")
     val port = config.getInt("proxy.port")
     new Proxy(Proxy.Type.SOCKS, InetSocketAddress.createUnresolved(url, port))
