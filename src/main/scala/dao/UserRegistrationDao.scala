@@ -9,12 +9,16 @@ import scala.concurrent.Future
 import javax.inject.Singleton
 import com.google.inject.Inject
 
-@Singleton
-class UserRegistrationDao @Inject()(db: PostgresProfile.backend.DatabaseDef) {
+
+trait WithEnum {
   implicit val myEnumMapper = MappedColumnType.base[RegistrationStep.Value, String](
     e => e.toString,
     s => RegistrationStep.withName(s)
   )
+}
+
+@Singleton
+class UserRegistrationDao @Inject()(db: PostgresProfile.backend.DatabaseDef) extends WithEnum {
   def all(): Future[Seq[UserRegistration]] = {
     db.run(users.result)
   }
@@ -47,23 +51,24 @@ class UserRegistrationDao @Inject()(db: PostgresProfile.backend.DatabaseDef) {
     db.run(users.filter(_.id === userId).map(u => (u.step, u.complete)).update((None, true)))
   }
 
-  private class UserTable(tag: Tag) extends Table[UserRegistration](tag, "users") {
-
-    def id = column[Int]("id", O.PrimaryKey)
-
-    def step = column[Option[RegistrationStep.Value]]("step")
-
-    def complete = column[Boolean]("complete")
-
-    def firstName = column[Option[String]]("firstName")
-
-    def lastName = column[Option[String]]("lastName")
-
-    def phone = column[Option[String]]("phone")
+  private val users = TableQuery[UserRegistrationTable]
+}
 
 
-    override def * = (id, step, complete, firstName, lastName, phone) <> (UserRegistration.tupled, UserRegistration.unapply)
-  }
+class UserRegistrationTable(tag: Tag) extends Table[UserRegistration](tag, "UserRegistrations") with WithEnum {
 
-  private val users = TableQuery[UserTable]
+  def id = column[Int]("id", O.PrimaryKey)
+
+  def step = column[Option[RegistrationStep.Value]]("step")
+
+  def complete = column[Boolean]("complete")
+
+  def firstName = column[Option[String]]("firstName")
+
+  def lastName = column[Option[String]]("lastName")
+
+  def phone = column[Option[String]]("phone")
+
+
+  override def * = (id, step, complete, firstName, lastName, phone) <> (UserRegistration.tupled, UserRegistration.unapply)
 }

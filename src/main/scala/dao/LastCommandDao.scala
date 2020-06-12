@@ -11,10 +11,7 @@ import com.google.inject.Inject
 
 @Singleton
 class LastCommandDao @Inject() (db: PostgresProfile.backend.DatabaseDef) {
-  implicit val myEnumMapper = MappedColumnType.base[BotCommand.Value, String](
-    e => e.toString,
-    s => BotCommand.withName(s)
-  )
+
   def all(): Future[Seq[LastCommand]] = {
     db.run(commands.result)
   }
@@ -27,14 +24,18 @@ class LastCommandDao @Inject() (db: PostgresProfile.backend.DatabaseDef) {
     db.run(commands insertOrUpdate LastCommand(userId, command))
   }
 
-  private class CommandTable(tag: Tag) extends Table[LastCommand](tag, "LastCommands") {
+  private val commands = TableQuery[LastCommandTable]
+}
 
-    def userId = column[Int]("userId", O.PrimaryKey)
+class LastCommandTable(tag: Tag) extends Table[LastCommand](tag, "LastCommands") {
+  implicit val myEnumMapper = MappedColumnType.base[BotCommand.Value, String](
+    e => e.toString,
+    s => BotCommand.withName(s)
+  )
 
-    def command = column[Option[BotCommand.Value]]("command")
+  def userId = column[Int]("userId", O.PrimaryKey)
 
-    override def * = (userId, command) <> (LastCommand.tupled, LastCommand.unapply)
-  }
+  def command = column[Option[BotCommand.Value]]("command")
 
-  private val commands = TableQuery[CommandTable]
+  override def * = (userId, command) <> (LastCommand.tupled, LastCommand.unapply)
 }
