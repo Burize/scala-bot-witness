@@ -26,7 +26,7 @@ libraryDependencies ++= Seq(
   "com.typesafe.slick" %% "slick-hikaricp" % "3.3.1"
 )
 
-
+Compile / resourceDirectory := baseDirectory.value / "conf"
 
 addCompilerPlugin(
   "org.scalamacros" % "paradise" % "2.1.1" cross CrossVersion.full
