@@ -8,11 +8,10 @@ This bot is called witness - user can register in the system and then send some 
 
 
 ## Used features
-- [Play2](https://www.playframework.com/) - framework for Scala
+- [bot4s.telegram](https://github.com/bot4s/telegram) - as wrapper for the Telegram Bot API
 - [Slick](http://scala-slick.org/) - database query and access library for Scala
 - [Guice](https://github.com/google/guice) -  dependency injection framework
-- [bot4s.telegram](https://github.com/bot4s/telegram) - as wrapper for the Telegram Bot API
-
+- [Circe](https://circe.github.io/circe/) - for JSON encoding/decoding
 ## Getting started 
 
 1. For launch project you need:
